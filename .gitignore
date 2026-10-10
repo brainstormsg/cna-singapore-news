@@ -1,0 +1,13 @@
+# macOS and editors
+.DS_Store
+._*
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.tmp
+
+# Runtime logs
+/data/update.log
