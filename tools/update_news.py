@@ -29,6 +29,10 @@ ALGOLIA_APP_ID = "KKWFBQ38XF"
 ALGOLIA_API_KEY = "e4b61225b5a00162761c501328a58ac7"
 BW_API = "https://api.beyondwords.io/v1/projects/{project}/player/by_content_id/{podcast}"
 CNA_HOST = "www.channelnewsasia.com"
+SITE_URL = "https://brainstormsg.github.io/cna-singapore-news/"
+SITE_TITLE = "CNA Singapore & World News"
+SITE_DESCRIPTION = ("Listen to CNA Singapore and World stories with available audio, "
+                    "collected in a rolling seven-day playlist.")
 SECTIONS = ("singapore", "world")
 KEEP_DAYS = 7
 SGT = timezone(timedelta(hours=8))
@@ -264,9 +268,27 @@ def render(articles: list[dict], status: str = "") -> str:
 </article>''')
         sections.append(f"<section><h2>{html.escape(label)}</h2>{''.join(cards)}</section>")
     updated = now().strftime("%-d %b %Y, %-I:%M %p")
+    social_image = f"{SITE_URL}assets/social-preview.png"
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow, noarchive"><title>CNA Singapore &amp; World News</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>{SITE_TITLE}</title>
+<meta name="description" content="{html.escape(SITE_DESCRIPTION, quote=True)}">
+<link rel="canonical" href="{SITE_URL}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{SITE_TITLE}">
+<meta property="og:title" content="{SITE_TITLE}">
+<meta property="og:description" content="{html.escape(SITE_DESCRIPTION, quote=True)}">
+<meta property="og:url" content="{SITE_URL}">
+<meta property="og:image" content="{social_image}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="CNA Singapore and World News audio playlist">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{SITE_TITLE}">
+<meta name="twitter:description" content="{html.escape(SITE_DESCRIPTION, quote=True)}">
+<meta name="twitter:image" content="{social_image}">
+<meta name="twitter:image:alt" content="CNA Singapore and World News audio playlist">
 <style>
 :root{{--bg:#f6f6f6;--card:#fff;--ink:#202124;--muted:#65676b;--accent:#e51b23;--accent-dark:#bd1118;--line:#dedede}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}header,main{{max-width:860px;margin:auto}}header{{padding:28px 20px 12px;border-top:7px solid var(--accent)}}h1{{margin:0;font-size:30px;line-height:36px;letter-spacing:-.025em}}.sub,.meta{{color:var(--muted);font-size:14px;line-height:20px}}.sub{{margin:4px 0 0}}main{{padding:0 20px 56px}}h2{{font-size:18px;line-height:28px;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}}.card{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin:0 0 12px}}.card h3{{margin:0 0 4px;font-size:20px;line-height:28px;letter-spacing:-.015em}}.meta{{margin:0 0 12px}}.player{{display:flex;align-items:center;gap:8px}}.playbtn{{font:600 14px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:44px;padding:10px 16px;border-radius:999px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer}}.playbtn:hover{{background:#fff1f1}}.playbtn:focus-visible,.bar button:focus-visible,.link:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}.card.playing{{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}}.card.playing .playbtn,.playall{{background:var(--accent);color:#fff}}.playall{{margin-top:12px}}body.has-bar main{{padding-bottom:176px}}.bar{{position:fixed;inset:auto 0 0;background:#202124;color:#fff;padding:10px 12px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px #0003;z-index:10}}.bar[hidden]{{display:none}}.bar-inner{{max-width:860px;margin:auto}}.bar-title{{font-size:14px;line-height:20px;font-weight:600;margin-bottom:6px}}.bar-pos,.bar .time{{font-size:12px;color:#c8c8c8}}.bar-controls,.bar-seek{{display:flex;align-items:center;gap:8px}}.bar-seek{{margin-top:4px}}.bar button{{font:inherit;font-size:18px;width:44px;height:44px;border-radius:999px;border:0;background:#414247;color:#fff;cursor:pointer}}.bar button#toggle{{background:var(--accent);width:48px;height:48px}}.bar input[type=range]{{flex:1;accent-color:var(--accent)}}.bar .time{{min-width:34px;text-align:center;font-variant-numeric:tabular-nums}}.dur{{color:var(--muted);font-size:12px}}.link{{display:inline-block;margin-top:10px;color:var(--accent-dark);font-size:14px;font-weight:700;text-decoration:none}}.link:hover{{text-decoration:underline}}.status{{background:#fff3cd;border:1px solid #d9aa35;padding:10px 12px;border-radius:6px;font-size:14px}}@media(max-width:639px){{header,main{{padding-left:16px;padding-right:16px}}h1{{font-size:25px}}.card{{padding:16px}}}}
 </style></head><body><header><h1>CNA Singapore &amp; World News</h1><p class="sub">Singapore and World articles with available audio · rolling 7-day archive · {len(articles)} articles · Updated {updated} SGT</p><button class="playbtn playall" id="playall" type="button">▶ Play all, newest first</button></header><main>{f'<p class="status">{html.escape(status)}</p>' if status else ''}{''.join(sections) if sections else '<p>No CNA Singapore or World articles with available audio were found in the saved archive.</p>'}</main><div class="bar" id="bar" hidden><div class="bar-inner"><div class="bar-title" id="barTitle"></div><div class="bar-controls"><button id="prev" type="button" aria-label="Previous">⏮</button><button id="toggle" type="button" aria-label="Pause">⏸</button><button id="next" type="button" aria-label="Next">⏭</button><div class="bar-pos" id="barPos"></div></div><div class="bar-seek"><span class="time" id="cur">0:00</span><input id="seek" type="range" min="0" max="0" step="1" value="0" aria-label="Position"><span class="time" id="total">0:00</span></div></div></div><audio id="player" preload="none"></audio><script src="assets/player.js"></script></body></html>\n'''
