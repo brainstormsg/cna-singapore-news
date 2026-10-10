@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build a rolling seven-day CNA Singapore audio-news archive.
+"""Build a rolling seven-calendar-day CNA Singapore and World audio-news archive.
 
-Discovery is restricted to CNA's live news sitemap. Only /singapore/ articles
-with a BeyondWords player and a direct CDN MP3 are published. Source audio is
-never downloaded.
+Candidates come from CNA's public search index, supplemented by its live news
+sitemap. Only /singapore/ and /world/ articles with a BeyondWords player and a
+direct CDN MP3 are published. Source audio is never downloaded.
 """
 from __future__ import annotations
 
@@ -24,8 +24,12 @@ DATA = ROOT / "data" / "articles.json"
 OUT = ROOT / "index.html"
 LOG = ROOT / "data" / "update.log"
 SITEMAP = "https://www.channelnewsasia.com/api/v1/sitemap-news-feed?_format=xml"
+ALGOLIA_ENDPOINT = "https://KKWFBQ38XF-dsn.algolia.net/1/indexes/cnarevamp-ezrqv5hx/query"
+ALGOLIA_APP_ID = "KKWFBQ38XF"
+ALGOLIA_API_KEY = "e4b61225b5a00162761c501328a58ac7"
 BW_API = "https://api.beyondwords.io/v1/projects/{project}/player/by_content_id/{podcast}"
 CNA_HOST = "www.channelnewsasia.com"
+SECTIONS = ("singapore", "world")
 KEEP_DAYS = 7
 SGT = timezone(timedelta(hours=8))
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -63,9 +67,15 @@ def canonical_url(url: str) -> str | None:
     parsed = urlsplit(url)
     if parsed.scheme != "https" or parsed.netloc.lower() != CNA_HOST:
         return None
-    if not parsed.path.startswith("/singapore/"):
+    if not any(parsed.path.startswith(f"/{section}/") for section in SECTIONS):
         return None
     return urlunsplit(("https", CNA_HOST, parsed.path.rstrip("/"), "", ""))
+
+
+def archive_cutoff() -> datetime:
+    """Start of the local calendar day six days ago: today plus prior six days."""
+    today = now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return today - timedelta(days=KEEP_DAYS - 1)
 
 
 def parse_date(value: str | None) -> datetime | None:
@@ -79,7 +89,46 @@ def parse_date(value: str | None) -> datetime | None:
 
 def in_window(value: str | None) -> bool:
     parsed = parse_date(value)
-    return bool(parsed and parsed.astimezone(timezone.utc) >= (now() - timedelta(days=KEEP_DAYS)).astimezone(timezone.utc))
+    return bool(parsed and archive_cutoff() <= parsed.astimezone(SGT) <= now())
+
+
+def algolia_items() -> list[dict]:
+    """Return all current-window Singapore and World article aliases from CNA search."""
+    cutoff = int(archive_cutoff().timestamp())
+    found: dict[str, dict] = {}
+    for section in SECTIONS:
+        page = 0
+        pages = 1
+        while page < pages:
+            params = (f"query=&hitsPerPage=100&page={page}&filters="
+                      f"categories:{section.title()} AND field_release_date >= {cutoff}")
+            command = [
+                "/usr/bin/curl", "--fail", "--location", "--silent", "--show-error",
+                "--compressed", "--retry", "2", "--retry-all-errors", "--connect-timeout", "10",
+                "--max-time", "35", "-A", UA, "-H", f"X-Algolia-Application-Id: {ALGOLIA_APP_ID}",
+                "-H", f"X-Algolia-API-Key: {ALGOLIA_API_KEY}", "-H", "Content-Type: application/json",
+                "--data-binary", json.dumps({"params": params}), ALGOLIA_ENDPOINT,
+            ]
+            result = subprocess.run(command, capture_output=True)
+            if result.returncode:
+                detail = result.stderr.decode("utf-8", "replace").strip()
+                raise RuntimeError(f"Algolia {section} page {page} failed ({result.returncode}): {detail}")
+            payload = json.loads(result.stdout.decode("utf-8", "replace"))
+            pages = int(payload.get("nbPages", 0))
+            for hit in payload.get("hits", []):
+                if not isinstance(hit, dict):
+                    continue
+                alias = str(hit.get("url_alias", ""))
+                canonical = canonical_url(f"https://{CNA_HOST}{alias}")
+                released = hit.get("field_release_date")
+                if not canonical or not isinstance(released, (int, float)):
+                    continue
+                published = datetime.fromtimestamp(released, tz=timezone.utc).isoformat()
+                if in_window(published):
+                    found[canonical] = {"url": canonical, "published": published,
+                                        "title": html.unescape(str(hit.get("title", "")).strip())}
+            page += 1
+    return list(found.values())
 
 
 def sitemap_items(xml: str) -> list[dict]:
@@ -217,23 +266,39 @@ def render(articles: list[dict], status: str = "") -> str:
     updated = now().strftime("%-d %b %Y, %-I:%M %p")
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow, noarchive"><title>CNA Singapore News</title>
+<meta name="robots" content="noindex, nofollow, noarchive"><title>CNA Singapore &amp; World News</title>
 <style>
 :root{{--bg:#f6f6f6;--card:#fff;--ink:#202124;--muted:#65676b;--accent:#e51b23;--accent-dark:#bd1118;--line:#dedede}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}header,main{{max-width:860px;margin:auto}}header{{padding:28px 20px 12px;border-top:7px solid var(--accent)}}h1{{margin:0;font-size:30px;line-height:36px;letter-spacing:-.025em}}.sub,.meta{{color:var(--muted);font-size:14px;line-height:20px}}.sub{{margin:4px 0 0}}main{{padding:0 20px 56px}}h2{{font-size:18px;line-height:28px;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}}.card{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin:0 0 12px}}.card h3{{margin:0 0 4px;font-size:20px;line-height:28px;letter-spacing:-.015em}}.meta{{margin:0 0 12px}}.player{{display:flex;align-items:center;gap:8px}}.playbtn{{font:600 14px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:44px;padding:10px 16px;border-radius:999px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer}}.playbtn:hover{{background:#fff1f1}}.playbtn:focus-visible,.bar button:focus-visible,.link:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}.card.playing{{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}}.card.playing .playbtn,.playall{{background:var(--accent);color:#fff}}.playall{{margin-top:12px}}body.has-bar main{{padding-bottom:176px}}.bar{{position:fixed;inset:auto 0 0;background:#202124;color:#fff;padding:10px 12px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px #0003;z-index:10}}.bar[hidden]{{display:none}}.bar-inner{{max-width:860px;margin:auto}}.bar-title{{font-size:14px;line-height:20px;font-weight:600;margin-bottom:6px}}.bar-pos,.bar .time{{font-size:12px;color:#c8c8c8}}.bar-controls,.bar-seek{{display:flex;align-items:center;gap:8px}}.bar-seek{{margin-top:4px}}.bar button{{font:inherit;font-size:18px;width:44px;height:44px;border-radius:999px;border:0;background:#414247;color:#fff;cursor:pointer}}.bar button#toggle{{background:var(--accent);width:48px;height:48px}}.bar input[type=range]{{flex:1;accent-color:var(--accent)}}.bar .time{{min-width:34px;text-align:center;font-variant-numeric:tabular-nums}}.dur{{color:var(--muted);font-size:12px}}.link{{display:inline-block;margin-top:10px;color:var(--accent-dark);font-size:14px;font-weight:700;text-decoration:none}}.link:hover{{text-decoration:underline}}.status{{background:#fff3cd;border:1px solid #d9aa35;padding:10px 12px;border-radius:6px;font-size:14px}}@media(max-width:639px){{header,main{{padding-left:16px;padding-right:16px}}h1{{font-size:25px}}.card{{padding:16px}}}}
-</style></head><body><header><h1>CNA Singapore News</h1><p class="sub">Singapore articles with available audio · rolling 7-day archive · {len(articles)} articles · Updated {updated} SGT</p><button class="playbtn playall" id="playall" type="button">▶ Play all, newest first</button></header><main>{f'<p class="status">{html.escape(status)}</p>' if status else ''}{''.join(sections) if sections else '<p>No CNA Singapore articles with available audio were found in the saved archive.</p>'}</main><div class="bar" id="bar" hidden><div class="bar-inner"><div class="bar-title" id="barTitle"></div><div class="bar-controls"><button id="prev" type="button" aria-label="Previous">⏮</button><button id="toggle" type="button" aria-label="Pause">⏸</button><button id="next" type="button" aria-label="Next">⏭</button><div class="bar-pos" id="barPos"></div></div><div class="bar-seek"><span class="time" id="cur">0:00</span><input id="seek" type="range" min="0" max="0" step="1" value="0" aria-label="Position"><span class="time" id="total">0:00</span></div></div></div><audio id="player" preload="none"></audio><script src="assets/player.js"></script></body></html>\n'''
+</style></head><body><header><h1>CNA Singapore &amp; World News</h1><p class="sub">Singapore and World articles with available audio · rolling 7-day archive · {len(articles)} articles · Updated {updated} SGT</p><button class="playbtn playall" id="playall" type="button">▶ Play all, newest first</button></header><main>{f'<p class="status">{html.escape(status)}</p>' if status else ''}{''.join(sections) if sections else '<p>No CNA Singapore or World articles with available audio were found in the saved archive.</p>'}</main><div class="bar" id="bar" hidden><div class="bar-inner"><div class="bar-title" id="barTitle"></div><div class="bar-controls"><button id="prev" type="button" aria-label="Previous">⏮</button><button id="toggle" type="button" aria-label="Pause">⏸</button><button id="next" type="button" aria-label="Next">⏭</button><div class="bar-pos" id="barPos"></div></div><div class="bar-seek"><span class="time" id="cur">0:00</span><input id="seek" type="range" min="0" max="0" step="1" value="0" aria-label="Position"><span class="time" id="total">0:00</span></div></div></div><audio id="player" preload="none"></audio><script src="assets/player.js"></script></body></html>\n'''
 
 
 def main() -> int:
     old = [a for a in load_archive() if in_window(a.get("published")) and a.get("audio")]
     old_by_url = {a["url"]: a for a in old if a.get("url")}
     status = ""
+    discoveries: dict[str, list[dict]] = {}
+    discovery_errors: list[str] = []
     try:
-        candidates = sitemap_items(fetch(SITEMAP))
-    except Exception as exc:  # Keep existing archive untouched on failed discovery.
-        status = f"Last update could not reach CNA ({exc}). Showing the previously saved archive."
-        log(f"ERROR sitemap: {exc}; retained={len(old)}")
+        discoveries["search"] = algolia_items()
+    except Exception as exc:
+        discovery_errors.append(f"search: {exc}")
+        log(f"ERROR search: {exc}")
+    try:
+        discoveries["sitemap"] = sitemap_items(fetch(SITEMAP))
+    except Exception as exc:
+        discovery_errors.append(f"sitemap: {exc}")
+        log(f"ERROR sitemap: {exc}")
+    if not discoveries:
+        status = "Last update could not reach CNA. Showing the previously saved archive."
+        log(f"ERROR discovery unavailable; retained={len(old)}")
         OUT.write_text(render(old, status), encoding="utf-8")
         return 1
+    candidates_by_url: dict[str, dict] = {}
+    for source, items in discoveries.items():
+        for item in items:
+            candidates_by_url[item["url"]] = item
+        log(f"OK {source} candidates={len(items)}")
+    candidates = list(candidates_by_url.values())
     accepted, skipped, failures = 0, 0, 0
     merged = dict(old_by_url)
     for item in candidates:
