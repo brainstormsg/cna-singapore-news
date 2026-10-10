@@ -9,5 +9,8 @@ __pycache__/
 *.py[cod]
 *.tmp
 
-# Runtime logs
+# Runtime logs and unencrypted source material
 /data/update.log
+/data/articles.json
+/index.unlocked.html
+/.staticrypt.json

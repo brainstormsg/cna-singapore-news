@@ -1,9 +1,10 @@
 #!/bin/sh
-# Regenerate and publish the CNA Singapore News archive from a local runtime clone.
-# A non-zero generator exit means CNA discovery failed; retain the existing Pages version.
+# Regenerate, encrypt, and publish the CNA archive from a local runtime clone.
+# Plain content stays local; GitHub Pages receives only the StatiCrypt gate.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+KEYCHAIN_SERVICE="cna-singapore-news-staticrypt"
 cd "$ROOT"
 
 if ! /usr/bin/git pull -q --ff-only origin main; then
@@ -11,9 +12,13 @@ if ! /usr/bin/git pull -q --ff-only origin main; then
   exit 1
 fi
 
+STATICRYPT_PASSWORD=$(/usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -w)
+export STATICRYPT_PASSWORD
 /usr/bin/python3 tools/update_news.py
+/usr/bin/python3 tools/protect_site.py
+unset STATICRYPT_PASSWORD
 
-/usr/bin/git add -- index.html data/articles.json
+/usr/bin/git add -- index.html assets/social-preview.png
 if /usr/bin/git diff --cached --quiet; then
   printf '%s publish: no generated changes\n' "$(/bin/date '+%F %T')"
   exit 0

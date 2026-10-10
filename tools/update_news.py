@@ -21,7 +21,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "articles.json"
-OUT = ROOT / "index.html"
+# The plain page stays local. protect_site.py encrypts it into the deployed index.html.
+OUT = ROOT / "index.unlocked.html"
 LOG = ROOT / "data" / "update.log"
 SITEMAP = "https://www.channelnewsasia.com/api/v1/sitemap-news-feed?_format=xml"
 ALGOLIA_ENDPOINT = "https://KKWFBQ38XF-dsn.algolia.net/1/indexes/cnarevamp-ezrqv5hx/query"
